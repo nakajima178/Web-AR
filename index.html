@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebAR</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.1.4/dist/mindar-image-three.prod.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      overflow: hidden;
+      background: #000;
+      font-family: sans-serif;
+    }
+
+    #ar-ui {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      z-index: 999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    #start-ar {
+      pointer-events: all;
+      padding: 12px 28px;
+      font-size: 16px;
+      background: #ffffff;
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    #start-ar:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    #message {
+      color: #ffffff;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      text-align: center;
+      max-width: 90%;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="ar-ui">
+    <button id="start-ar">AR を開始</button>
+    <p id="message">ボタンを押してカメラを起動してください。</p>
+  </div>
+
+  <script>
+    const startArButton = document.getElementById('start-ar');
+    const message = document.getElementById('message');
+
+    // GitHub Pages では index.html と同じディレクトリに置く
+    const TARGET_SRC = './targets.mind';
+    const MODEL_SRC  = './model.glb';
+
+    const initAR = async () => {
+      startArButton.disabled = true;
+      message.textContent = 'カメラを起動しています...';
+
+      const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+        container: document.body,
+        imageTargetSrc: TARGET_SRC,
+        maxTrack: 1,
+      });
+
+      const { renderer, scene, camera } = mindarThree;
+
+      // ライト
+      const hemiLight = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+      scene.add(hemiLight);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      dirLight.position.set(0, 1, 1);
+      scene.add(dirLight);
+
+      // アンカー（ターゲット画像 0枚目）
+      const anchor = mindarThree.addAnchor(0);
+
+      // GLTFモデル読み込み
+      const loader = new THREE.GLTFLoader();
+      loader.load(
+        MODEL_SRC,
+        (gltf) => {
+          const model = gltf.scene;
+          model.scale.set(0.5, 0.5, 0.5);
+          model.position.set(0, 0, 0);
+          anchor.group.add(model);
+          message.textContent = 'モデルを読み込みました。ターゲット画像をカメラに向けてください。';
+        },
+        (xhr) => {
+          const pct = Math.round((xhr.loaded / xhr.total) * 100);
+          message.textContent = `モデル読み込み中... ${pct}%`;
+        },
+        (error) => {
+          console.error('GLTFLoader error:', error);
+          message.textContent = 'モデルの読み込みに失敗しました。model.glb を確認してください。';
+        }
+      );
+
+      // AR開始
+      try {
+        await mindarThree.start();
+        message.textContent = 'ターゲット画像をカメラに向けてください。';
+      } catch (err) {
+        console.error('AR start error:', err);
+        message.textContent = 'AR を開始できませんでした。カメラの許可を確認してください。';
+        startArButton.disabled = false;
+        return;
+      }
+
+      // レンダリングループ
+      renderer.setAnimationLoop(() => {
+        renderer.render(scene, camera);
+      });
+    };
+
+    startArButton.addEventListener('click', initAR);
+  </script>
+</body>
+</html>
