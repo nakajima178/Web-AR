@@ -2,137 +2,170 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>model.glb テスト</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>WebAR2</title>
+
   <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/loaders/GLTFLoader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.1.4/dist/mindar-image-three.prod.js"></script>
+
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #1a1a2e; overflow: hidden; font-family: sans-serif; }
-    canvas { display: block; }
-    #ui {
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: sans-serif;
+    }
+
+    /* MindARが生成するコンテナを全画面に */
+    #ar-container {
       position: fixed;
-      top: 16px;
+      top: 0;
       left: 0;
       width: 100%;
+      height: 100%;
+    }
+
+    /* MindAR内部のcanvasとvideoを強制全画面 */
+    #ar-container canvas,
+    #ar-container video {
+      position: absolute !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover !important;
+    }
+
+    #ar-ui {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      z-index: 999;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 8px;
-      z-index: 10;
+      padding: 20px;
+      gap: 12px;
       pointer-events: none;
     }
-    #version {
-      color: rgba(255,255,255,0.5);
-      font-size: 11px;
+
+    #start-ar {
+      pointer-events: all;
+      padding: 14px 32px;
+      font-size: 18px;
+      background: #fff;
+      color: #000;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: bold;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.4);
     }
-    #status {
-      background: rgba(0,0,0,0.7);
+
+    #start-ar:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    #message {
       color: #fff;
-      padding: 8px 16px;
+      background: rgba(0, 0, 0, 0.65);
+      padding: 8px 18px;
       border-radius: 8px;
       font-size: 14px;
-    }
-    #log {
-      background: rgba(0,0,0,0.7);
-      color: #0f0;
-      padding: 6px 14px;
-      border-radius: 6px;
-      font-size: 11px;
-      font-family: monospace;
+      text-align: center;
       max-width: 90%;
-      word-break: break-all;
-    }
-    #hint {
-      color: rgba(255,255,255,0.5);
-      font-size: 11px;
     }
   </style>
 </head>
+
 <body>
-  <div id="ui">
-    <span id="version">v1 - model.glb テスト</span>
-    <p id="status">model.glb を読み込み中...</p>
-    <p id="log"></p>
-    <p id="hint">指でドラッグすると回転できます</p>
+  <div id="ar-container"></div>
+
+  <div id="ar-ui">
+    <button id="start-ar">AR を開始2</button>
+    <p id="message">ボタンを押してカメラを起動してください。</p>
   </div>
 
   <script>
-    const status = document.getElementById('status');
-    const log    = document.getElementById('log');
+    const startArButton = document.getElementById('start-ar');
+    const message = document.getElementById('message');
+    const arContainer = document.getElementById('ar-container');
 
-    // シーン
-    const scene    = new THREE.Scene();
-    scene.background = new THREE.Color(0x1a1a2e);
+    const TARGET_SRC = './targets.mind';
+    const MODEL_SRC  = './model.glb';
 
-    const camera   = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 1000);
-    camera.position.set(0, 1, 3);
+    const initAR = async () => {
+      startArButton.disabled = true;
+      message.textContent = 'カメラを起動しています...';
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    document.body.appendChild(renderer.domElement);
+      const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+        container: arContainer,   // ← 全画面コンテナを指定
+        imageTargetSrc: TARGET_SRC,
+        maxTrack: 1,
+      });
 
-    // コントロール（指で回転）
-    const controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
+      const { renderer, scene, camera } = mindarThree;
 
-    // ライト
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.5));
-    const dir = new THREE.DirectionalLight(0xffffff, 1);
-    dir.position.set(1, 2, 2);
-    scene.add(dir);
+      // ライト
+      scene.add(new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1));
+      const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+      dir.position.set(0, 1, 1);
+      scene.add(dir);
 
-    // グリッド（地面の目安）
-    scene.add(new THREE.GridHelper(4, 10, 0x444466, 0x333355));
+      // アンカー
+      const anchor = mindarThree.addAnchor(0);
 
-    // model.glb 読み込み
-    const loader = new THREE.GLTFLoader();
-    loader.load(
-      './model.glb',
-      (gltf) => {
-        const model = gltf.scene;
-
-        // モデルをシーン中央に自動調整
-        const box    = new THREE.Box3().setFromObject(model);
-        const center = box.getCenter(new THREE.Vector3());
-        const size   = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const scale  = 2 / maxDim; // 画面に収まるようにスケール
-        model.scale.setScalar(scale);
-        model.position.sub(center.multiplyScalar(scale));
-
-        scene.add(model);
-        status.textContent = '✅ model.glb 読み込み成功！';
-        log.textContent = `サイズ: x=${size.x.toFixed(2)} y=${size.y.toFixed(2)} z=${size.z.toFixed(2)}`;
-      },
-      (xhr) => {
-        if (xhr.total) {
-          const pct = Math.round((xhr.loaded / xhr.total) * 100);
-          status.textContent = `読み込み中... ${pct}%`;
+      // モデル読み込み
+      const loader = new THREE.GLTFLoader();
+      loader.load(
+        MODEL_SRC,
+        (gltf) => {
+          const model = gltf.scene;
+          model.scale.set(0.5, 0.5, 0.5);
+          model.position.set(0, 0, 0);
+          anchor.group.add(model);
+          message.textContent = 'ターゲット画像をカメラに向けてください。';
+        },
+        (xhr) => {
+          if (xhr.total) {
+            const pct = Math.round((xhr.loaded / xhr.total) * 100);
+            message.textContent = `モデル読み込み中... ${pct}%`;
+          }
+        },
+        (error) => {
+          console.error('GLTFLoader error:', error);
+          message.textContent = 'モデルの読み込みに失敗しました。';
         }
-      },
-      (error) => {
-        status.textContent = '❌ model.glb の読み込み失敗';
-        log.textContent = error.message || 'ファイルが見つからないか壊れています';
-        log.style.color = '#f55';
+      );
+
+      // AR開始
+      try {
+        await mindarThree.start();
+        message.textContent = 'ターゲット画像をカメラに向けてください。';
+      } catch (err) {
+        console.error('AR start error:', err);
+        message.textContent = 'AR を開始できませんでした。カメラの許可を確認してください。';
+        startArButton.disabled = false;
+        return;
       }
-    );
 
-    // リサイズ対応
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+      // レンダリングループ
+      renderer.setAnimationLoop(() => {
+        renderer.render(scene, camera);
+      });
+    };
 
-    // レンダリングループ
-    (function animate() {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-    })();
+    startArButton.addEventListener('click', initAR);
   </script>
 </body>
 </html>
